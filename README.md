@@ -1,6 +1,6 @@
 # CMG Bill JSON Extractor for TIMES POS
 
-MVP web app for extracting CMG / Central Trading Co., Ltd. tax invoice images into the TIMES POS bill JSON schema.
+Web app for extracting CMG / Central Trading Co., Ltd. tax invoice images into the TIMES POS bill JSON schema.
 
 ## Structure
 
@@ -43,26 +43,37 @@ npm run dev
 
 Open `http://localhost:3000`.
 
-## GitHub Pages
+## GitHub Pages + OCR backend
 
 GitHub Pages can host only the static Next.js frontend. It cannot run the
-FastAPI backend, so the deployed Pages build uses the browser-side extractor
-unless a backend URL is configured.
+FastAPI backend, so production extraction requires a deployed OCR backend.
 
-To connect a deployed FastAPI backend later, add this repository variable:
+Recommended free backend target: Hugging Face Spaces Docker SDK.
+
+1. Create a Hugging Face write token.
+2. Add GitHub repository secret `HF_TOKEN`.
+3. Add GitHub repository variable `HF_SPACE_REPO`, for example:
 
 ```text
-NEXT_PUBLIC_API_URL=https://your-backend.example.com
+Evasi0m/cmg-bill-extractor-api
 ```
 
-Then rerun the `Deploy GitHub Pages` workflow. Local development still calls
-the FastAPI backend at `http://localhost:8000` by default.
+4. Run the `Deploy Backend to Hugging Face Space` workflow.
 
-## MVP behavior
+That workflow creates/updates the Space, sets `NEXT_PUBLIC_API_URL`
+automatically, and triggers the GitHub Pages workflow again.
+
+Local development can call a local backend by setting:
+
+```bash
+NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev
+```
+
+## Behavior
 
 - Upload multiple PNG/JPG images.
 - One uploaded image becomes one bill object.
-- The backend returns bills in the target schema plus validation metadata for the UI.
+- The backend OCR returns bills in the target schema plus validation metadata for the UI.
 - The Download JSON button exports only:
 
 ```json
@@ -73,10 +84,15 @@ the FastAPI backend at `http://localhost:8000` by default.
 
 No date, PO, customer, barcode, or other extra fields are included in the exported JSON.
 
-## OCR integration path
+## OCR pipeline
 
-`backend/ocr.py` is intentionally stubbed. Plug PaddleOCR or Surya into `run_ocr()` and return text tokens with bounding boxes. Then replace the fixture logic in `backend/cmg_parser.py` with coordinate-based extraction for:
+The backend uses OpenCV preprocessing, PaddleOCR text detection/recognition,
+and a CMG coordinate parser for:
 
 - top-right `เลขที่:` invoice box
 - product table `รายการสินค้า`, `จำนวน`, `ราคาต่อหน่วย`, `จำนวนเงิน`
 - footer totals `ราคารวม`, `ราคาหลังหักส่วนลด`, `บวก VAT 7%`, `จำนวนเงินรวม`
+
+If OCR confidence is low, fields are missing, or validation fails, suspicious
+rows are marked with `needs_review=true`. The production path does not invent
+items from filenames.

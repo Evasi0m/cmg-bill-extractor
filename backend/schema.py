@@ -13,7 +13,7 @@ class BillItem(BaseModel):
 
 class Bill(BaseModel):
     is_cmg_bill: bool = True
-    supplier_invoice_no: str = Field(pattern=r"^\d{10}$")
+    supplier_invoice_no: str = ""
     bill_subtotal: float = Field(ge=0)
     total_qty: int = Field(ge=0)
     vat_amount: float = Field(ge=0)
@@ -40,4 +40,3 @@ class ValidationResult(BaseModel):
 
 class ExtractionResponse(BillsPayload):
     validation: List[ValidationResult]
-

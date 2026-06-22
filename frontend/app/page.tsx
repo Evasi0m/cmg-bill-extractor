@@ -7,10 +7,10 @@ import { UploadRail } from "../components/UploadRail";
 import { ValidationPanel } from "../components/ValidationPanel";
 import type { Bill, ExtractionResponse, UploadedImage, ValidationResult } from "../components/types";
 import { validatePayload } from "../components/validation";
-import { clientExtract } from "../components/clientExtractor";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-const USE_CLIENT_EXTRACTOR = process.env.NEXT_PUBLIC_CLIENT_EXTRACTOR === "true";
+const API_URL =
+  process.env.NEXT_PUBLIC_API_URL ||
+  (process.env.NODE_ENV === "development" ? "http://localhost:8000" : "");
 
 export default function Home() {
   const [images, setImages] = useState<UploadedImage[]>([]);
@@ -49,11 +49,8 @@ export default function Home() {
     setError(null);
 
     try {
-      if (USE_CLIENT_EXTRACTOR) {
-        const data = clientExtract(images);
-        setBills(data.bills);
-        setServerValidation(data.validation);
-        return;
+      if (!API_URL) {
+        throw new Error("ยังไม่ได้ตั้งค่า NEXT_PUBLIC_API_URL สำหรับ backend OCR");
       }
 
       const formData = new FormData();
@@ -73,10 +70,7 @@ export default function Home() {
       setServerValidation(data.validation);
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : "Unknown extraction error";
-      const data = clientExtract(images);
-      setBills(data.bills);
-      setServerValidation(data.validation);
-      setError(`เชื่อมต่อ backend ไม่สำเร็จ จึงใช้ browser extractor แทน: ${message}`);
+      setError(`เชื่อมต่อ backend OCR ไม่สำเร็จ: ${message}`);
     } finally {
       setIsLoading(false);
     }
@@ -113,7 +107,7 @@ export default function Home() {
         </div>
         <div className="hidden items-center gap-2 text-xs font-medium text-slate-500 sm:flex">
           <RefreshCw size={14} />
-          {USE_CLIENT_EXTRACTOR ? "GitHub Pages · browser extractor" : "OCR stub MVP · PaddleOCR/Surya-ready backend"}
+          {API_URL ? "Connected to backend OCR" : "Backend OCR URL required"}
         </div>
       </header>
 

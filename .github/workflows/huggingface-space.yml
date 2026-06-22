@@ -1,0 +1,49 @@
+name: Deploy Backend to Hugging Face Space
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Hugging Face CLI
+        run: pip install -U huggingface_hub
+
+      - name: Verify required secrets
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_SPACE_REPO: ${{ vars.HF_SPACE_REPO }}
+        run: |
+          test -n "$HF_TOKEN" || (echo "Missing repository secret HF_TOKEN" && exit 1)
+          test -n "$HF_SPACE_REPO" || (echo "Missing repository variable HF_SPACE_REPO, e.g. Evasi0m/cmg-bill-extractor-api" && exit 1)
+
+      - name: Create or update Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_SPACE_REPO: ${{ vars.HF_SPACE_REPO }}
+        run: |
+          hf repos create "$HF_SPACE_REPO" --type space --space-sdk docker --exist-ok
+          hf upload "$HF_SPACE_REPO" backend --type space --commit-message "Deploy CMG OCR backend"
+
+      - name: Connect GitHub Pages to backend API
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HF_SPACE_REPO: ${{ vars.HF_SPACE_REPO }}
+        run: |
+          SPACE_URL="https://$(echo "$HF_SPACE_REPO" | tr '[:upper:]' '[:lower:]' | tr '/' '-').hf.space"
+          gh variable set NEXT_PUBLIC_API_URL --body "$SPACE_URL" --repo "$GITHUB_REPOSITORY"
+          gh workflow run pages.yml --repo "$GITHUB_REPOSITORY"
+          echo "Backend API URL: $SPACE_URL"

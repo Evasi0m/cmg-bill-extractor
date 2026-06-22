@@ -1,3 +1,12 @@
+---
+title: CMG Bill Extractor API
+colorFrom: red
+colorTo: gray
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # Backend notes
 
 Run the API locally:
@@ -9,11 +18,10 @@ pip install -r requirements.txt
 uvicorn main:app --reload --port 8000
 ```
 
-Current MVP extraction flow:
+Current extraction flow:
 
 1. Save uploaded images to a temporary directory.
-2. Call `preprocess_image()` as the OpenCV extension point.
-3. Call `run_ocr()` as the PaddleOCR/Surya extension point.
-4. Call `parse_cmg_bill()` for CMG coordinate parsing.
+2. Preprocess the image with OpenCV.
+3. Run PaddleOCR and collect text, bounding boxes, and confidence.
+4. Parse CMG invoice fields from document coordinates.
 5. Validate all bills deterministically.
-

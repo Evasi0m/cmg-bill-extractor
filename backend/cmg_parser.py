@@ -1,186 +1,258 @@
+import re
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
+
+import cv2
 
 from schema import Bill, BillItem
 
+Token = Dict[str, Any]
+
 
 def normalize_model_code(raw: str) -> str:
-    value = raw.strip()
+    value = normalize_text(raw)
+    value = re.sub(r"^\d{8,14}\s+", "", value)
     for prefix in ("CE ", "CB "):
         if value.startswith(prefix):
-            return value[len(prefix) :].strip()
+            value = value[len(prefix) :].strip()
+            break
+    value = re.sub(r"[^A-Z0-9\-\s]", "", value.upper())
+    value = re.sub(r"\s+", " ", value).strip()
     return value
 
 
-def item(model_code: str, quantity: int, unit_cost: float, line_amount: float, needs_review: bool = False) -> BillItem:
-    return BillItem(
-        model_code=normalize_model_code(model_code),
-        quantity=quantity,
-        unit_cost=unit_cost,
-        line_amount=line_amount,
-        needs_review=needs_review,
+def parse_cmg_bill(image_path: Path, ocr_tokens: List[Token]) -> Bill:
+    tokens = enrich_tokens(image_path, ocr_tokens)
+    if not tokens:
+        return empty_review_bill(is_cmg_bill=False)
+
+    items = extract_items(tokens)
+    bill = Bill(
+        is_cmg_bill=looks_like_cmg_bill(tokens),
+        supplier_invoice_no=extract_invoice_no(tokens) or "",
+        bill_subtotal=0,
+        total_qty=0,
+        vat_amount=0,
+        grand_total=0,
+        items=items,
     )
 
+    bill.total_qty = extract_total_qty(tokens, items) or 0
+    footer = extract_footer_totals(tokens)
+    if footer:
+        bill.bill_subtotal = footer["bill_subtotal"]
+        bill.vat_amount = footer["vat_amount"]
+        bill.grand_total = footer["grand_total"]
 
-SAMPLE_BILLS: Dict[str, Bill] = {
-    "11.JPG": Bill(
-        supplier_invoice_no="1312256683",
-        bill_subtotal=55777.54,
-        total_qty=49,
-        vat_amount=3904.43,
-        grand_total=59681.97,
-        items=[
-            item("CE GMA-S140PP-4ADR", 3, 2041.12, 6123.36),
-            item("CE GM-S2110PG-4ADR", 2, 3611.21, 7222.42),
-            item("CE LF-20W-1ADF", 5, 549.53, 2747.65),
-            item("CE LF-20W-8ADF", 5, 549.53, 2747.65),
-            item("CE LTP-1234DS-4ADF", 2, 1020.56, 2041.12),
-            item("CE LTP-1302DD-4A1VDF", 3, 902.80, 2708.40),
-            item("CE LTP-1302DS-2AVDF", 3, 1138.32, 3414.96),
-            item("CE LTP-1308D-2AVDF", 2, 785.05, 1570.10),
-            item("CE LTP-1308D-4AVDF", 2, 785.05, 1570.10),
-            item("CE LTP-1335D-2AVDF", 2, 824.30, 1648.60),
-            item("CE LTP-1335D-4AVDF", 3, 824.30, 2472.90),
-            item("CE LTP-H157MR-9ADF", 5, 1530.84, 7654.20),
-            item("CE LTP-H157MRB-1BDF", 2, 1530.84, 3061.68),
-            item("CE LTP-E412PG-4ADF", 5, 1687.85, 8439.25),
-            item("CE LTP-V007L-1BUDF", 5, 471.03, 2355.15),
-        ],
-    ),
-    "13.JPG": Bill(
-        supplier_invoice_no="1312257065",
-        bill_subtotal=10755.15,
-        total_qty=12,
-        vat_amount=752.86,
-        grand_total=11508.01,
-        items=[
-            item("CE LTP-1303DD-4AVDF", 1, 745.79, 745.79),
-            item("CE MTS-RS100L-1AVDF", 2, 2001.87, 4003.74),
-            item("CE W-218HC-8AVDF", 4, 471.03, 1884.12),
-            item("CE W-738H-3AVDF", 5, 824.30, 4121.50),
-        ],
-    ),
-    "8.JPG": Bill(
-        supplier_invoice_no="1312256569",
-        bill_subtotal=41528.95,
-        total_qty=42,
-        vat_amount=2907.03,
-        grand_total=44435.98,
-        items=[
-            item("CE MQ-24DA-3ADF", 5, 824.30, 4121.50),
-            item("CE MQ-24GA-1ADF", 5, 1138.32, 5691.60),
-            item("CE MRW-230H-1E2VDF", 3, 745.79, 2237.37),
-            item("CE MRW-230H-1E4VDF", 3, 745.79, 2237.37),
-            item("CE MRW-230H-2EVDF", 3, 745.79, 2237.37),
-            item("CE MTP-1302DD-5AVDF", 3, 902.80, 2708.40),
-            item("CE MTP-1302DD-9AVDF", 3, 902.80, 2708.40),
-            item("CE MTP-1302DS-1AVDF", 2, 1138.32, 2276.64),
-            item("CE MTP-1302DS-7AVDF", 3, 1138.32, 3414.96),
-            item("CE MTP-1335D-2A2VDF", 2, 863.55, 1727.10),
-            item("CE MTP-1370D-2A2VDF", 2, 902.80, 1805.60),
-            item("CE MTP-1374D-2A3VDF", 2, 1295.33, 2590.66),
-            item("CE MTP-1374D-5A2VDF", 2, 1295.33, 2590.66),
-            item("CE MTP-1374D-7A2VDF", 3, 1295.33, 3885.99),
-            item("CE MTP-B146D-1AVDF", 1, 1295.33, 1295.33),
-        ],
-    ),
-    "10.JPG": Bill(
-        supplier_invoice_no="1312257011",
-        bill_subtotal=32500.98,
-        total_qty=41,
-        vat_amount=2275.07,
-        grand_total=34776.05,
-        items=[
-            item("CE MTP-V300D-1A2UDF", 3, 1020.56, 3061.68),
-            item("CE MTP-V300D-2AUDF", 3, 1020.56, 3061.68),
-            item("CE MTP-VD01-1BVUDF", 3, 628.04, 1884.12),
-            item("CE MTP-VD01L-2BVUDF", 3, 667.29, 2001.87),
-            item("CE MTP-VD03B-1AUDF", 3, 981.31, 2943.93),
-            item("CE MTP-VD03D-1AUDF", 2, 785.05, 1570.10),
-            item("CE MTP-VD03D-2A2UDF", 3, 785.05, 2355.15),
-            item("CE MTP-VD03D-2AUDF", 4, 785.05, 3140.20),
-            item("CE MTP-VD03D-3A1UDF", 3, 785.05, 2355.15),
-            item("CE MTP-VT01B-1BUDF", 2, 942.06, 1884.12),
-            item("CE MTP-VT01B-2BUDF", 2, 942.06, 1884.12),
-            item("CE MTP-VT01D-2BUDF", 5, 706.54, 3532.70),
-            item("CE MTS-115D-2A1VDF", 1, 1413.08, 1413.08, True),
-            item("CE MW-240-1E2VDF", 2, 353.27, 706.54),
-            item("CE MW-240-1EVDF", 2, 353.27, 706.54),
-        ],
-    ),
-    "12.JPG": Bill(
-        supplier_invoice_no="1312256608",
-        bill_subtotal=37721.58,
-        total_qty=55,
-        vat_amount=2640.51,
-        grand_total=40362.09,
-        items=[
-            item("CE LTP-V007L-7B1UDF", 5, 471.03, 2355.15),
-            item("CE LTP-V007L-7B2UDF", 1, 510.28, 510.28),
-            item("CE LTP-V007L-9BUDF", 1, 471.03, 471.03),
-            item("CE LTP-V300L-7A2UDF", 1, 981.31, 981.31, True),
-            item("CE LTP-VT01D-1BUDF", 3, 706.54, 2119.62),
-            item("CE LTP-VT01D-7BUDF", 3, 706.54, 2119.62),
-            item("CE LTP-VT01G-1BUDF", 5, 863.55, 4317.75),
-            item("CE LTP-VT01G-9BUDF", 3, 863.55, 2590.65),
-            item("CE LTP-VT02BL-3AUDF", 3, 745.79, 2237.37),
-            item("CE LW-204-1BDF", 5, 588.79, 2943.95),
-            item("CE LW-204-4ADF", 5, 588.79, 2943.95),
-            item("CE LW-204-7ADF", 5, 588.79, 2943.95),
-            item("CE LW-204-9ADF", 5, 588.79, 2943.95),
-            item("CE MQ-24DA-1ADF", 5, 824.30, 4121.50),
-            item("CE MQ-24DA-2ADF", 5, 824.30, 4121.50),
-        ],
-    ),
-    "9.JPG": Bill(
-        supplier_invoice_no="1312257061",
-        bill_subtotal=63706.67,
-        total_qty=107,
-        vat_amount=4459.47,
-        grand_total=68166.14,
-        items=[
-            item("CE MW-620H-1AVDF", 10, 667.29, 6672.90),
-            item("CE MW-620H-2AVDF", 5, 667.29, 3336.45),
-            item("CE MW-620H-3AVDF", 5, 667.29, 3336.45),
-            item("CE MWA-100HD-1AVDF", 4, 1256.07, 5024.28),
-            item("CE MWA-300H-1AVDF", 2, 1373.83, 2747.66),
-            item("CE MWA-300H-3AVDF", 1, 1373.83, 1373.83),
-            item("CE W-218H-1AVDF", 10, 471.03, 4710.30),
-            item("CE W-218H-1BVDF", 20, 471.03, 9420.60),
-            item("CE W-218H-2AVDF", 5, 471.03, 2355.15),
-            item("CE W-218H-3AVDF", 10, 471.03, 4710.30),
-            item("CE W-218H-4BVDF", 5, 471.03, 2355.15),
-            item("CE W-218HC-2AVDF", 5, 471.03, 2355.15),
-            item("CE W-218HC-4AVDF", 10, 471.03, 4710.30),
-            item("CE W-218HM-7AVDF", 5, 471.03, 2355.15),
-            item("CE W-738H-1AVDF", 10, 824.30, 8243.00),
-        ],
-    ),
-}
+    if not bill.supplier_invoice_no or not footer or bill.total_qty == 0:
+        for item in bill.items:
+            item.needs_review = True
+
+    return bill
 
 
-def parse_cmg_bill(image_path: Path, ocr_tokens: List[Dict[str, Any]]) -> Bill:
-    """CMG-specific parser placeholder.
-
-    The MVP uses filename-based sample fixtures for the provided case-study
-    bills. Later this function should consume OCR text + bounding boxes and
-    use document coordinates for invoice number, table columns, and footer.
-    """
-    _ = ocr_tokens
-    name = image_path.name
-    for suffix, bill in SAMPLE_BILLS.items():
-        if name.endswith(suffix):
-            return bill.model_copy(deep=True)
-    return fallback_bill()
-
-
-def fallback_bill() -> Bill:
+def empty_review_bill(is_cmg_bill: bool = True) -> Bill:
     return Bill(
-        supplier_invoice_no="0000000000",
-        bill_subtotal=2355.15,
-        total_qty=5,
-        vat_amount=164.86,
-        grand_total=2520.01,
-        items=[item("CE LTP-V007L-7B1UDF", 5, 471.03, 2355.15, True)],
+        is_cmg_bill=is_cmg_bill,
+        supplier_invoice_no="",
+        bill_subtotal=0,
+        total_qty=0,
+        vat_amount=0,
+        grand_total=0,
+        items=[],
     )
 
+
+def enrich_tokens(image_path: Path, ocr_tokens: List[Token]) -> List[Token]:
+    width, height = image_size(image_path)
+    enriched: List[Token] = []
+    for token in ocr_tokens:
+        bbox = token.get("bbox") or [0, 0, 0, 0]
+        x1, y1, x2, y2 = [float(value) for value in bbox]
+        item = dict(token)
+        item["text"] = normalize_text(str(token.get("text", "")))
+        item["x1n"] = x1 / width if width else 0
+        item["x2n"] = x2 / width if width else 0
+        item["y1n"] = y1 / height if height else 0
+        item["y2n"] = y2 / height if height else 0
+        item["cxn"] = float(token.get("cx", (x1 + x2) / 2)) / width if width else 0
+        item["cyn"] = float(token.get("cy", (y1 + y2) / 2)) / height if height else 0
+        enriched.append(item)
+    return [token for token in enriched if token["text"]]
+
+
+def image_size(image_path: Path) -> tuple[int, int]:
+    image = cv2.imread(str(image_path))
+    if image is None:
+        return 1, 1
+    height, width = image.shape[:2]
+    return width, height
+
+
+def looks_like_cmg_bill(tokens: List[Token]) -> bool:
+    top_text = " ".join(token["text"].lower() for token in tokens if token["cyn"] < 0.22)
+    return "cmg" in top_text or "central trading" in top_text
+
+
+def extract_invoice_no(tokens: List[Token]) -> Optional[str]:
+    candidates = []
+    for token in tokens:
+        digits = re.sub(r"\D", "", token["text"])
+        if len(digits) != 10:
+            continue
+        if not (token["cxn"] > 0.62 and token["cyn"] < 0.28):
+            continue
+        candidates.append((token["cyn"], -token["cxn"], digits))
+    if not candidates:
+        return None
+    return sorted(candidates)[0][2]
+
+
+def extract_items(tokens: List[Token]) -> List[BillItem]:
+    model_tokens = []
+    for token in tokens:
+        if not (0.20 <= token["cxn"] <= 0.68 and 0.25 <= token["cyn"] <= 0.68):
+            continue
+        model_code = extract_model_code(token["text"])
+        if model_code:
+            model_tokens.append((token, model_code))
+
+    rows: List[BillItem] = []
+    for token, model_code in dedupe_model_rows(model_tokens):
+        near = tokens_near_y(tokens, token["cyn"], tolerance=0.018)
+        quantity = nearest_int(near, 0.55, 0.72)
+        unit_cost = nearest_money(near, 0.66, 0.82)
+        line_amount = nearest_money(near, 0.78, 0.98)
+        needs_review = (
+            token.get("confidence", 1) < 0.78
+            or quantity is None
+            or unit_cost is None
+            or line_amount is None
+        )
+        rows.append(
+            BillItem(
+                model_code=model_code,
+                quantity=quantity or 0,
+                unit_cost=unit_cost or 0,
+                line_amount=line_amount or 0,
+                needs_review=needs_review,
+            )
+        )
+    return rows
+
+
+def dedupe_model_rows(model_tokens: List[tuple[Token, str]]) -> List[tuple[Token, str]]:
+    rows: List[tuple[Token, str]] = []
+    for token, model_code in sorted(model_tokens, key=lambda item: item[0]["cyn"]):
+        if rows and abs(rows[-1][0]["cyn"] - token["cyn"]) < 0.009:
+            if len(model_code) > len(rows[-1][1]):
+                rows[-1] = (token, model_code)
+            continue
+        rows.append((token, model_code))
+    return rows
+
+
+def extract_model_code(text: str) -> Optional[str]:
+    clean = normalize_model_code(text)
+    if "-" not in clean or not re.search(r"[A-Z]", clean):
+        return None
+    clean = re.sub(r"\s+", "", clean)
+    if len(clean) < 7:
+        return None
+    # Ignore OCR fragments from footer labels or document metadata.
+    if any(word in clean for word in ("TAX", "INVOICE", "DATE", "TOTAL", "VAT")):
+        return None
+    return clean
+
+
+def tokens_near_y(tokens: List[Token], y: float, tolerance: float) -> List[Token]:
+    return [token for token in tokens if abs(token["cyn"] - y) <= tolerance]
+
+
+def nearest_int(tokens: List[Token], min_x: float, max_x: float) -> Optional[int]:
+    candidates = []
+    for token in tokens:
+        if not (min_x <= token["cxn"] <= max_x):
+            continue
+        value = parse_int(token["text"])
+        if value is not None:
+            candidates.append((abs(token["cxn"] - ((min_x + max_x) / 2)), value))
+    return sorted(candidates)[0][1] if candidates else None
+
+
+def nearest_money(tokens: List[Token], min_x: float, max_x: float) -> Optional[float]:
+    candidates = []
+    for token in tokens:
+        if not (min_x <= token["cxn"] <= max_x):
+            continue
+        value = parse_money(token["text"])
+        if value is not None:
+            candidates.append((abs(token["cxn"] - ((min_x + max_x) / 2)), value))
+    return sorted(candidates)[0][1] if candidates else None
+
+
+def extract_total_qty(tokens: List[Token], items: List[BillItem]) -> Optional[int]:
+    if not items:
+        return None
+
+    last_item_y = max((token["cyn"] for token in tokens if extract_model_code(token["text"])), default=0.0)
+    candidates = []
+    for token in tokens:
+        if not (0.55 <= token["cxn"] <= 0.72 and last_item_y < token["cyn"] < 0.75):
+            continue
+        value = parse_int(token["text"])
+        if value is not None:
+            candidates.append((token["cyn"], value))
+    if candidates:
+        return sorted(candidates)[-1][1]
+    return None
+
+
+def extract_footer_totals(tokens: List[Token]) -> Optional[Dict[str, float]]:
+    amounts = []
+    for token in tokens:
+        if not (token["cxn"] > 0.68 and token["cyn"] > 0.58):
+            continue
+        value = parse_money(token["text"])
+        if value is not None:
+            amounts.append((token["cyn"], token["cxn"], value))
+
+    unique_amounts: List[tuple[float, float, float]] = []
+    for amount in sorted(amounts):
+        if unique_amounts and abs(unique_amounts[-1][0] - amount[0]) < 0.012 and abs(unique_amounts[-1][2] - amount[2]) < 0.01:
+            continue
+        unique_amounts.append(amount)
+
+    if len(unique_amounts) < 3:
+        return None
+
+    last_three = [amount[2] for amount in unique_amounts[-3:]]
+    return {
+        "bill_subtotal": last_three[0],
+        "vat_amount": last_three[1],
+        "grand_total": last_three[2],
+    }
+
+
+def parse_int(text: str) -> Optional[int]:
+    clean = re.sub(r"[^\d]", "", text)
+    if not clean or len(clean) > 3:
+        return None
+    return int(clean)
+
+
+def parse_money(text: str) -> Optional[float]:
+    match = re.search(r"\d{1,3}(?:,\d{3})*\.\d{2}|\d+\.\d{2}", text)
+    if not match:
+        return None
+    return float(match.group(0).replace(",", ""))
+
+
+def normalize_text(text: str) -> str:
+    return (
+        text.replace("—", "-")
+        .replace("–", "-")
+        .replace("−", "-")
+        .replace("／", "/")
+        .strip()
+    )

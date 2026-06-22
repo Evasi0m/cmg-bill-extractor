@@ -90,7 +90,7 @@ def validate_bill(
             )
 
     if issues:
-        mark_suspicious_rows(bill)
+        mark_suspicious_rows(bill, issues)
 
     return ValidationResult(
         bill_index=bill_index,
@@ -100,9 +100,9 @@ def validate_bill(
     )
 
 
-def mark_suspicious_rows(bill: Bill) -> None:
+def mark_suspicious_rows(bill: Bill, issues: List[ValidationIssue]) -> None:
+    has_bill_level_issue = any(not issue.path.startswith("items.") for issue in issues)
     for item in bill.items:
         expected_line = money(Decimal(item.quantity) * money(item.unit_cost))
-        if not within(money(item.line_amount), expected_line, "0.02"):
+        if has_bill_level_issue or not within(money(item.line_amount), expected_line, "0.02"):
             item.needs_review = True
-

@@ -39,7 +39,6 @@ jobs:
         env:
           GITHUB_PAGES: "true"
           NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL }}
-          NEXT_PUBLIC_CLIENT_EXTRACTOR: ${{ vars.NEXT_PUBLIC_API_URL == '' && 'true' || 'false' }}
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
