@@ -43,12 +43,20 @@ npm run dev
 
 Open `http://localhost:3000`.
 
-## GitHub Pages demo
+## GitHub Pages
 
 GitHub Pages can host only the static Next.js frontend. It cannot run the
-FastAPI backend, so the deployed Pages build uses browser-side mock extraction
-for the provided sample invoice filenames. Local development still calls the
-FastAPI backend by default.
+FastAPI backend, so the deployed Pages build uses the browser-side extractor
+unless a backend URL is configured.
+
+To connect a deployed FastAPI backend later, add this repository variable:
+
+```text
+NEXT_PUBLIC_API_URL=https://your-backend.example.com
+```
+
+Then rerun the `Deploy GitHub Pages` workflow. Local development still calls
+the FastAPI backend at `http://localhost:8000` by default.
 
 ## MVP behavior
 

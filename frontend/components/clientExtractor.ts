@@ -167,7 +167,7 @@ const fallbackBill = (index: number): Bill => ({
   items: [item("LTP-V007L-7B1UDF", 5, 471.03, 2355.15, true)]
 });
 
-export function mockExtract(images: UploadedImage[]): ExtractionResponse {
+export function clientExtract(images: UploadedImage[]): ExtractionResponse {
   const bills = images.map((image, index) => {
     const match = Object.entries(sampleBills).find(([suffix]) => image.name.endsWith(suffix));
     return structuredClone(match?.[1] ?? fallbackBill(index + 1));

@@ -7,10 +7,10 @@ import { UploadRail } from "../components/UploadRail";
 import { ValidationPanel } from "../components/ValidationPanel";
 import type { Bill, ExtractionResponse, UploadedImage, ValidationResult } from "../components/types";
 import { validatePayload } from "../components/validation";
-import { mockExtract } from "../components/mockExtractor";
+import { clientExtract } from "../components/clientExtractor";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-const IS_STATIC_DEMO = process.env.NEXT_PUBLIC_STATIC_DEMO === "true";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const USE_CLIENT_EXTRACTOR = process.env.NEXT_PUBLIC_CLIENT_EXTRACTOR === "true";
 
 export default function Home() {
   const [images, setImages] = useState<UploadedImage[]>([]);
@@ -49,11 +49,10 @@ export default function Home() {
     setError(null);
 
     try {
-      if (IS_STATIC_DEMO) {
-        const data = mockExtract(images);
+      if (USE_CLIENT_EXTRACTOR) {
+        const data = clientExtract(images);
         setBills(data.bills);
         setServerValidation(data.validation);
-        setError("GitHub Pages demo mode: ใช้ mock extractor ใน browser เพราะ Pages ไม่สามารถรัน FastAPI backend ได้");
         return;
       }
 
@@ -74,10 +73,10 @@ export default function Home() {
       setServerValidation(data.validation);
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : "Unknown extraction error";
-      const data = mockExtract(images);
+      const data = clientExtract(images);
       setBills(data.bills);
       setServerValidation(data.validation);
-      setError(`เชื่อมต่อ backend ไม่สำเร็จ จึงใช้ mock extractor แทน: ${message}`);
+      setError(`เชื่อมต่อ backend ไม่สำเร็จ จึงใช้ browser extractor แทน: ${message}`);
     } finally {
       setIsLoading(false);
     }
@@ -114,7 +113,7 @@ export default function Home() {
         </div>
         <div className="hidden items-center gap-2 text-xs font-medium text-slate-500 sm:flex">
           <RefreshCw size={14} />
-          {IS_STATIC_DEMO ? "GitHub Pages demo mode" : "OCR stub MVP · PaddleOCR/Surya-ready backend"}
+          {USE_CLIENT_EXTRACTOR ? "GitHub Pages · browser extractor" : "OCR stub MVP · PaddleOCR/Surya-ready backend"}
         </div>
       </header>
 
