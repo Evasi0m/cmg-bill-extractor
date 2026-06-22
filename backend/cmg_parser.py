@@ -28,7 +28,7 @@ def parse_cmg_bill(image_path: Path, ocr_tokens: List[Token]) -> Bill:
 
     items = extract_items(tokens)
     bill = Bill(
-        is_cmg_bill=looks_like_cmg_bill(tokens),
+        is_cmg_bill=looks_like_cmg_bill(tokens) or bool(extract_invoice_no(tokens) and items),
         supplier_invoice_no=extract_invoice_no(tokens) or "",
         bill_subtotal=0,
         total_qty=0,
@@ -196,6 +196,19 @@ def extract_total_qty(tokens: List[Token], items: List[BillItem]) -> Optional[in
         return None
 
     last_item_y = max((token["cyn"] for token in tokens if extract_model_code(token["text"])), default=0.0)
+    max_item_quantity = max((item.quantity for item in items), default=0)
+    qty_column_values = []
+    for token in tokens:
+        if not (0.52 <= token["cxn"] <= 0.72 and 0.28 <= token["cyn"] <= 0.78):
+            continue
+        value = parse_int(token["text"])
+        if value is not None:
+            qty_column_values.append((token["cyn"], value))
+
+    total_like_values = [value for _, value in qty_column_values if value > max_item_quantity]
+    if total_like_values:
+        return max(total_like_values)
+
     candidates = []
     for token in tokens:
         if not (0.55 <= token["cxn"] <= 0.72 and last_item_y < token["cyn"] < 0.75):

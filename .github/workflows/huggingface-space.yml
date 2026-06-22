@@ -51,6 +51,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           SPACE_URL="${{ steps.deploy-space.outputs.space_url }}"
-          gh variable set NEXT_PUBLIC_API_URL --body "$SPACE_URL" --repo "$GITHUB_REPOSITORY"
-          gh workflow run pages.yml --repo "$GITHUB_REPOSITORY"
+          gh variable set NEXT_PUBLIC_API_URL --body "$SPACE_URL" --repo "$GITHUB_REPOSITORY" \
+            || echo "::warning::Could not set NEXT_PUBLIC_API_URL with GITHUB_TOKEN. Set it manually to $SPACE_URL."
+          gh workflow run pages.yml --repo "$GITHUB_REPOSITORY" \
+            || echo "::warning::Could not trigger Pages workflow automatically. Run Deploy GitHub Pages manually."
           echo "Backend API URL: $SPACE_URL"
