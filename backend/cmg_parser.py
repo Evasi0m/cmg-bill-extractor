@@ -216,7 +216,7 @@ def extract_total_qty(tokens: List[Token], items: List[BillItem]) -> Optional[in
         if not (0.55 <= token["cxn"] <= 0.72 and last_item_y < token["cyn"] < 0.75):
             continue
         value = parse_int(token["text"])
-        if value is not None:
+        if value is not None and max_item_quantity < value <= 99:
             candidates.append((token["cyn"], value))
     if candidates:
         return sorted(candidates)[-1][1]
