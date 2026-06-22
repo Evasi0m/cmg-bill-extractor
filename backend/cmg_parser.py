@@ -205,7 +205,9 @@ def extract_total_qty(tokens: List[Token], items: List[BillItem]) -> Optional[in
         if value is not None:
             qty_column_values.append((token["cyn"], value))
 
-    total_like_values = [value for _, value in qty_column_values if value > max_item_quantity]
+    total_like_values = [
+        value for _, value in qty_column_values if max_item_quantity < value <= 99
+    ]
     if total_like_values:
         return max(total_like_values)
 
@@ -248,6 +250,8 @@ def extract_footer_totals(tokens: List[Token]) -> Optional[Dict[str, float]]:
 
 
 def parse_int(text: str) -> Optional[int]:
+    if re.search(r"[A-Za-z]", text):
+        return None
     clean = re.sub(r"[^\d]", "", text)
     if not clean or len(clean) > 3:
         return None
