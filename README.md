@@ -52,13 +52,7 @@ Recommended free backend target: Hugging Face Spaces Docker SDK.
 
 1. Create a Hugging Face write token.
 2. Add GitHub repository secret `HF_TOKEN`.
-3. Add GitHub repository variable `HF_SPACE_REPO`, for example:
-
-```text
-Evasi0m/cmg-bill-extractor-api
-```
-
-4. Run the `Deploy Backend to Hugging Face Space` workflow.
+3. Run the `Deploy Backend to Hugging Face Space` workflow.
 
 That workflow creates/updates the Space, sets `NEXT_PUBLIC_API_URL`
 automatically, and triggers the GitHub Pages workflow again.
